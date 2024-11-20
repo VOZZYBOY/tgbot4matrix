@@ -84,6 +84,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["generated_text"] = generated_text
     await update.message.reply_text(f"Сгенерированный текст:\n\n{generated_text}", reply_markup=reply_markup)
 
+# Обработчик фото
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        photo = update.message.photo[-1]  # Получаем самое большое фото
+        file = await photo.get_file()
+        downloaded_file = await file.download_to_drive()  # Сохраняем фото на диск
+        context.user_data["photo_file"] = downloaded_file  # Сохраняем путь к фото
+
+        await update.message.reply_text("Фото успешно прикреплено. Нажмите Опубликовать.")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка обработки фото: {e}")
+        logger.error(f"Ошибка обработки фото: {e}")
+
 # Обработчик кнопок
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -100,10 +113,32 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"✅ Текст утверждён:\n\n{context.user_data['approved_text']}\n\nОпубликовать?", reply_markup=reply_markup)
 
     elif query.data == "publish":
-        # Публикация текста в канал
         try:
-            await context.bot.send_message(chat_id=CHANNEL_ID, text=context.user_data["approved_text"])
-            await query.edit_message_text(f"✅ Сообщение опубликовано в канал:\n\n{context.user_data['approved_text']}")
+            photo_path = context.user_data.get("photo_file")
+            text = context.user_data["approved_text"]
+
+            if len(text) > 1024:
+                # Если текст длиннее 1024 символов, разделяем
+                caption = text[:1024]  # Первая часть (максимум 1024 символа)
+                remaining_text = text[1024:]  # Остальное
+
+                if photo_path:
+                    # Отправляем фото с первой частью текста
+                    await context.bot.send_photo(chat_id=CHANNEL_ID, photo=open(photo_path, "rb"), caption=caption)
+                else:
+                    # Отправляем первую часть текста
+                    await context.bot.send_message(chat_id=CHANNEL_ID, text=caption)
+
+                # Отправляем оставшийся текст как отдельное сообщение
+                await context.bot.send_message(chat_id=CHANNEL_ID, text=remaining_text)
+            else:
+                # Если текст короче 1024 символов
+                if photo_path:
+                    await context.bot.send_photo(chat_id=CHANNEL_ID, photo=open(photo_path, "rb"), caption=text)
+                else:
+                    await context.bot.send_message(chat_id=CHANNEL_ID, text=text)
+
+            await query.edit_message_text(f"✅ Сообщение опубликовано в канал:\n\n{text}")
         except Exception as e:
             await query.edit_message_text(f"❌ Ошибка публикации: {e}")
             logger.error(f"Ошибка публикации в канал: {e}")
@@ -115,28 +150,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Введите новый текст для регенерации:")
         context.user_data["waiting_for_regeneration"] = True
 
-# Обработчик текстов для регенерации
-async def regenerate_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("waiting_for_regeneration"):
-        user_description = update.message.text.strip()
-        if not user_description:
-            await update.message.reply_text("Пожалуйста, введите описание обновлений.")
-            return
-
-        await update.message.reply_text("Регенерирую текст...")
-        generated_text = generate_text(user_description)
-
-        keyboard = [
-            [InlineKeyboardButton("Утвердить", callback_data="approve")],
-            [InlineKeyboardButton("Регенерировать", callback_data="regenerate")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        context.user_data["generated_text"] = generated_text
-        context.user_data["waiting_for_regeneration"] = False
-        await update.message.reply_text(f"Сгенерированный текст:\n\n{generated_text}", reply_markup=reply_markup)
-    else:
-        await update.message.reply_text("Я не жду текстового ввода. Используйте /start для начала.")
 
 # Запуск бота
 def main():
@@ -145,8 +158,8 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.TEXT, regenerate_message))
 
     app.run_polling()
 
