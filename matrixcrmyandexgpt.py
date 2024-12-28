@@ -5,9 +5,9 @@ import logging
 import iam_token_manager  # Импортируем наш модуль для работы с IAM токенами
 
 # Настройки
-CATALOG_ID = ""
+CATALOG_ID = "b1gb9k14k5ui80g91tnp"
 MODEL_URI = f"gpt://{CATALOG_ID}/yandexgpt/rc"
-TELEGRAM_TOKEN = ""
+TELEGRAM_TOKEN = "7828823061:AAFqiiM3bQhB2Ab1hidTMXaziGDCps5H3N4"
 CHANNEL_ID = "@matrixcrm"  # Замените на ID вашего канала
 
 # Логирование
